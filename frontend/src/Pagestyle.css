@@ -1,0 +1,290 @@
+/* ─────────────────────────────────────────────
+   APPEND this block to the bottom of App.css
+   ───────────────────────────────────────────── */
+
+/* ── Site navigation ── */
+.site-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2rem;
+  height: 56px;
+  background: #0f172a;
+  border-bottom: 1px solid rgba(255 255 255 / 0.08);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.site-nav__brand {
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #7dd3fc; /* sky-300 */
+}
+
+.site-nav__links {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.site-nav__link {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.4rem 1rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: rgba(255 255 255 / 0.55);
+  transition: color 0.15s, background 0.15s;
+  letter-spacing: 0.03em;
+}
+
+.site-nav__link:hover {
+  color: #fff;
+  background: rgba(255 255 255 / 0.07);
+}
+
+.site-nav__link--active {
+  color: #7dd3fc;
+  background: rgba(125 211 252 / 0.1);
+}
+
+/* ── Rosario page ── */
+.rosario-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+.rosario-hero {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+}
+
+.rosario-hero__text {
+  flex: 1 1 300px;
+}
+
+.rosario-title {
+  font-size: clamp(2.5rem, 8vw, 4.5rem);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  margin: 0.25rem 0 0.75rem;
+  background: linear-gradient(135deg, #7dd3fc 0%, #38bdf8 60%, #0ea5e9 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Rosario toolbar override (reuse toolbar styles, just constrain width) ── */
+.rosario-toolbar {
+  margin-bottom: 2rem;
+}
+
+/* ── Rosario cards ── */
+.rosario-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.25rem;
+  margin-bottom: 2rem;
+}
+
+.rosario-card {
+  background: rgba(255 255 255 / 0.04);
+  border: 1px solid rgba(255 255 255 / 0.08);
+  border-radius: 12px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.rosario-card:hover {
+  border-color: rgba(125 211 252 / 0.3);
+  background: rgba(125 211 252 / 0.04);
+}
+
+.rosario-card__icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.rosario-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.rosario-card__header h2 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255 255 255 / 0.6);
+  margin: 0;
+}
+
+.rosario-card__state {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(255 255 255 / 0.06);
+  color: rgba(255 255 255 / 0.45);
+  white-space: nowrap;
+}
+
+.rosario-card__state--active {
+  background: rgba(52 211 153 / 0.15);
+  color: #34d399;
+}
+
+.rosario-card__value {
+  font-size: 3rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #f1f5f9;
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+}
+
+.rosario-card__unit {
+  font-size: 1rem;
+  font-weight: 400;
+  color: rgba(255 255 255 / 0.4);
+}
+
+.rosario-card__detail {
+  font-size: 0.8rem;
+  color: rgba(255 255 255 / 0.4);
+  margin: 0;
+}
+
+/* ─────────────────────────────────────────────
+   TOLIN PAGE — append after rosario styles
+   ───────────────────────────────────────────── */
+
+.tolin-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+.tolin-hero {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+}
+
+.tolin-hero__text {
+  flex: 1 1 300px;
+}
+
+.tolin-title {
+  font-size: clamp(2.5rem, 8vw, 4.5rem);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  margin: 0.25rem 0 0.75rem;
+  background: linear-gradient(135deg, #a78bfa 0%, #7c3aed 60%, #6d28d9 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.tolin-toolbar {
+  margin-bottom: 2rem;
+}
+
+.tolin-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.25rem;
+  margin-bottom: 2rem;
+}
+
+.tolin-card {
+  background: rgba(255 255 255 / 0.04);
+  border: 1px solid rgba(255 255 255 / 0.08);
+  border-radius: 12px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.tolin-card:hover {
+  border-color: rgba(167 139 250 / 0.3);
+  background: rgba(167 139 250 / 0.04);
+}
+
+.tolin-card__icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.tolin-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.tolin-card__header h2 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255 255 255 / 0.6);
+  margin: 0;
+}
+
+.tolin-card__state {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(255 255 255 / 0.06);
+  color: rgba(255 255 255 / 0.45);
+  white-space: nowrap;
+}
+
+.tolin-card__state--active {
+  background: rgba(167 139 250 / 0.15);
+  color: #a78bfa;
+}
+
+.tolin-card__value {
+  font-size: 3rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #f1f5f9;
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+}
+
+.tolin-card__unit {
+  font-size: 1rem;
+  font-weight: 400;
+  color: rgba(255 255 255 / 0.4);
+}
+
+.tolin-card__detail {
+  font-size: 0.8rem;
+  color: rgba(255 255 255 / 0.4);
+  margin: 0;
+}
