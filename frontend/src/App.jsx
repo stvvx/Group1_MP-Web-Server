@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import mqtt from 'mqtt'
-import './App.css'
-import './Pagestyle.css'
 import RosarioPage from './RosarioPage'
 import TolinPage from './TolinPage'
+import './App.css'
+import './Pagestyle.css'
 
 const MQTT_URL = import.meta.env.VITE_MQTT_URL?.trim() || 'wss://broker.emqx.io:8084/mqtt'
 const MQTT_BASE_TOPIC = import.meta.env.VITE_MQTT_BASE_TOPIC?.trim().replace(/\/+$/, '') || 'group1/mp'
@@ -27,6 +27,10 @@ function App() {
   const [telemetry, setTelemetry] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [backendStatus, setBackendStatus] = useState('idle')
+  const [backendError, setBackendError] = useState('')
+  const [backendLastSync, setBackendLastSync] = useState(null)
+  const [backendSyncCount, setBackendSyncCount] = useState(0)
   const [feedState, setFeedState] = useState('idle')
   const [lastUpdated, setLastUpdated] = useState(null)
   const [activePage, setActivePage] = useState('dashboard') // 'dashboard' | 'rosario' | 'tolin'
@@ -62,7 +66,7 @@ function App() {
       setError(mqttError?.message || 'MQTT connection failed')
     }
 
-    const handleMessage = (incomingTopic, payload) => {
+    const handleMessage = async (incomingTopic, payload) => {
       const message = payload.toString()
 
       if (incomingTopic === topic('status')) {
@@ -72,6 +76,12 @@ function App() {
           setEsp32Status(data.wifiConnected ? 'online' : 'offline')
           setLastUpdated(new Date())
           setError('')
+          await postToBackend({
+            timestamp: data.timestamp ?? new Date().toISOString(),
+            sensor: 'status',
+            value: null,
+            raw_data: JSON.stringify(data),
+          })
         } catch {
           setError('Received malformed MQTT status payload.')
         }
@@ -80,8 +90,15 @@ function App() {
 
       if (incomingTopic === topic('telemetry')) {
         try {
-          setTelemetry(JSON.parse(message))
+          const data = JSON.parse(message)
+          setTelemetry(data)
           setLastUpdated(new Date())
+          await postToBackend({
+            timestamp: data.timestamp ?? new Date().toISOString(),
+            sensor: 'telemetry',
+            value: null,
+            raw_data: JSON.stringify(data),
+          })
         } catch {
           setError('Received malformed MQTT telemetry payload.')
         }
@@ -118,6 +135,34 @@ function App() {
     }
     setLoading(brokerStatus === 'connecting')
   }, [brokerStatus, status, telemetry])
+
+  const postToBackend = async (payload) => {
+    setBackendStatus('saving')
+    setBackendError('')
+
+    try {
+      const response = await fetch('/api/data', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}))
+        throw new Error(errorBody.error || 'Failed to save backend data')
+      }
+
+      setBackendSyncCount((current) => current + 1)
+      setBackendLastSync(new Date())
+      setBackendStatus('synced')
+    } catch (saveError) {
+      setBackendStatus('error')
+      setBackendError(saveError.message)
+      console.error('Backend save failed', saveError)
+    }
+  }
 
   const handleFeedNow = async () => {
     const client = clientRef.current
@@ -218,8 +263,6 @@ function App() {
 
   const navLinks = [
     { id: 'dashboard', label: 'Dashboard' },
-    { id: 'rosario', label: 'ROSARIO' },
-    { id: 'tolin', label: 'TOLIN' },
   ]
 
   return (
@@ -333,6 +376,11 @@ Crayfish and Guppy Fish</h1>
             <div className="summary-panel__status">
               <span>Feed action</span>
               <strong>{feedState === 'queued' ? 'Queued' : feedState === 'sending' ? 'Sending' : feedState === 'error' ? 'Failed' : 'Idle'}</strong>
+            </div>
+            <div className="summary-panel__status">
+              <span>Backend sync</span>
+              <strong>{backendError ? 'Failed' : backendStatus === 'saving' ? 'Saving...' : backendSyncCount > 0 ? 'Synced' : 'Idle'}</strong>
+              <small>{backendLastSync ? `Last ${backendLastSync.toLocaleTimeString()}` : 'No sync yet'}</small>
             </div>
           </section>
         </main>
