@@ -118,8 +118,58 @@ app.get('/api/data', (req, res) => {
   }
 
   stmt.free()
+  // If actuator records, attempt to parse raw_data JSON for convenience
+  if (sensor === 'actuator') {
+    const enhanced = rows.map((r) => {
+      let parsed = null
+      try {
+        parsed = JSON.parse(r.raw_data)
+      } catch (e) {
+        parsed = null
+      }
+      return {
+        ...r,
+        parsed,
+        ir_sensor: parsed?.ir_sensor ?? null,
+        hitCount: parsed?.hitCount ?? null,
+        running: parsed?.running ?? null,
+        state: parsed?.state ?? null,
+      }
+    })
+    return res.json(enhanced)
+  }
+
   res.json(rows)
 });
+
+// Return recent IR-specific readings (parsed actuator messages)
+app.get('/api/ir', (req, res) => {
+  const limit = parseInt(req.query.limit, 10) || 100
+  const order = req.query.order === 'asc' ? 'ASC' : 'DESC'
+  const stmt = db.prepare("SELECT * FROM sensor_data WHERE sensor='actuator' ORDER BY id " + order + " LIMIT ?")
+  stmt.bind([limit])
+  const rows = []
+  while (stmt.step()) rows.push(stmt.getAsObject())
+  stmt.free()
+
+  const parsed = rows.map((r) => {
+    let p = null
+    try { p = JSON.parse(r.raw_data) } catch {}
+    return {
+      id: r.id,
+      timestamp: r.timestamp,
+      raw_data: r.raw_data,
+      ir_sensor: p?.ir_sensor ?? null,
+      hitCount: p?.hitCount ?? null,
+      running: p?.running ?? null,
+      state: p?.state ?? null,
+      stable: p?.stable ?? null,
+      parsed: p,
+    }
+  })
+
+  res.json(parsed)
+})
 
 // Return last actuator message
 app.get('/api/actuator', (req, res) => {
@@ -139,7 +189,7 @@ app.get('/api/actuator', (req, res) => {
   res.json({ ...row, parsed });
 });
 
-const PORT = process.env.PORT || 3005;
+const PORT = process.env.PORT || 5376;
 const HOST = process.env.HOST || '0.0.0.0';
 app.listen(PORT, HOST, () => {
   console.log(`Backend running on http://${HOST}:${PORT}`);

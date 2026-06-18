@@ -280,12 +280,18 @@ void setup() {
   digitalWrite(AMMONIA_RELAY_PIN, RELAY_OFF);  // Air pump OFF initially
   
   // ----- IR SENSOR + ACTUATOR SETUP -----
-  pinMode(IR_SENSOR_PIN, INPUT);
+  // Use internal pull-up to avoid floating input on input-only pins
+  // Many IR break-beam / reflective sensors pull the line LOW when triggered.
+  pinMode(IR_SENSOR_PIN, INPUT_PULLUP);
   pinMode(RELAY1_PIN, OUTPUT);
   pinMode(RELAY2_PIN, OUTPUT);
   digitalWrite(RELAY1_PIN, HIGH);
   digitalWrite(RELAY2_PIN, HIGH);
   stopActuator();
+
+  // Initialize sensor state from the hardware pin to avoid assuming HIGH
+  lastSensorState = digitalRead(IR_SENSOR_PIN);
+  stableSensorState = lastSensorState;
 
   // ----- ULTRASONIC SENSOR SETUP -----
   pinMode(TRIG_PIN, OUTPUT);

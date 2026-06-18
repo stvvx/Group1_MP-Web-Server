@@ -153,6 +153,7 @@ export default function App() {
   const [irSensorState, setIrSensorState] = useState('HIGH')
   const [actuatorRunning, setActuatorRunning] = useState(false)
   const [actuatorCycleState, setActuatorCycleState] = useState('IDLE')
+  const [actuatorHistory, setActuatorHistory] = useState([])
 
   // ── Fetch history from SQLite backend ──
   const fetchHistory = useCallback(async () => {
@@ -188,38 +189,64 @@ export default function App() {
     }
   }, [])
 
+  // ── Fetch actuator / IR history from backend ──
+  const fetchActuatorHistory = useCallback(async (limit = 60) => {
+    try {
+      const res = await fetch(`/api/ir?limit=${limit}`)
+      if (!res.ok) throw new Error('Actuator history fetch failed')
+      const rows = await res.json()
+
+      const parsed = (rows || []).map((row) => {
+        let p = row.parsed ?? null
+        if (!p) {
+          try { p = JSON.parse(row.raw_data) } catch { p = row }
+        }
+        const hit = p?.hitCount ?? row.hitCount ?? null
+        const running = (p?.running ?? row.running) ? 1 : 0
+        const ir = p?.ir_sensor ?? row.ir_sensor ?? null
+        return {
+          time: new Date(row.timestamp).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
+          hitCount: hit,
+          running,
+          ir_state: ir,
+          raw: p,
+        }
+      }).reverse()
+
+      setActuatorHistory(parsed.filter((item) => item.hitCount !== null))
+    } catch (e) {
+      console.warn('Actuator history fetch error:', e?.message || e)
+    }
+  }, [])
+
   // ── MQTT setup ──
   useEffect(() => {
     fetchHistory()
-    const historyInterval = setInterval(fetchHistory, 30_000)
+    fetchActuatorHistory()
+    const historyInterval = setInterval(() => {
+      fetchHistory()
+      fetchActuatorHistory()
+    }, 30_000)
 
     ;(async () => {
       try {
-        const res = await fetch('/api/actuator')
+        const res = await fetch('/api/ir?limit=1')
         if (res.ok) {
-          const data = await res.json()
-          if (data.parsed) {
-            setActuatorStatus(data.parsed)
-            setActuatorState(data.parsed.running ? 'running' : 'idle')
-            setActuatorRunning(data.parsed.running || false)
-            setActuatorCycleState(data.parsed.state || 'IDLE')
-            setIrSensorState(data.parsed.ir_sensor || 'HIGH')
+          const rows = await res.json()
+          const data = Array.isArray(rows) ? rows[0] : rows
+          if (data) {
+            const parsed = data.parsed ?? data
+            setActuatorStatus(parsed)
+            setActuatorState(parsed.running ? 'running' : 'idle')
+            setActuatorRunning(parsed.running || false)
+            setActuatorCycleState(parsed.state || 'IDLE')
+            setIrSensorState(parsed.ir_sensor || 'HIGH')
             setLastUpdated(new Date(data.timestamp || Date.now()))
-          } else {
-            try {
-              const parsed = JSON.parse(data.raw_data)
-              setActuatorStatus(parsed)
-              setActuatorState(parsed.running ? 'running' : 'idle')
-              setActuatorRunning(parsed.running || false)
-              setActuatorCycleState(parsed.state || 'IDLE')
-              setIrSensorState(parsed.ir_sensor || 'HIGH')
-              setLastUpdated(new Date(data.timestamp || Date.now()))
-            } catch {
-              setActuatorStatus({ raw: data.raw_data })
-            }
           }
         }
-      } catch {}
+      } catch (e) {
+        console.warn('Failed to fetch initial actuator/IR:', e.message)
+      }
     })()
 
     const client = mqtt.connect(MQTT_URL, {
@@ -322,7 +349,7 @@ export default function App() {
       client.end(true)
       clientRef.current = null
     }
-  }, [fetchHistory])
+  }, [fetchHistory, fetchActuatorHistory])
 
   useEffect(() => {
     if (status || telemetry) { 
@@ -388,13 +415,13 @@ export default function App() {
   const handleActuatorNow = () => {
     setActuatorState('sending')
     publishCommand('actuator', '1',
-      () => { 
-        setActuatorState('queued'); 
-        window.setTimeout(() => setActuatorState('idle'), 2000) 
+      () => {
+        setActuatorState('queued')
+        window.setTimeout(() => setActuatorState('idle'), 2000)
       },
-      () => { 
-        setActuatorState('error'); 
-        window.setTimeout(() => setActuatorState('idle'), 2000) 
+      () => {
+        setActuatorState('error')
+        window.setTimeout(() => setActuatorState('idle'), 2000)
       }
     )
   }
