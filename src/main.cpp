@@ -149,6 +149,10 @@ bool lastAmmoniaState = false;
 unsigned long lastAmmoniaReadTime = 0;
 const unsigned long AMMONIA_INTERVAL = 1000; // Read every 1 second
 
+// ===== ACTUATOR/IR SENSOR RUNTIME STATE =====
+unsigned long lastActuatorPublishTime = 0;
+const unsigned long ACTUATOR_PUBLISH_INTERVAL = 500; // Publish IR sensor status every 500ms
+
 // ===== FEEDER RUNTIME STATE =====
 bool wasDark = false;
 unsigned long lastFeedTime = 0;
@@ -420,6 +424,13 @@ void loop() {
     readSensorAndCountHits();
   } else {
     runActuatorCycle();
+  }
+
+  // ===== SECTION 7B: PERIODIC IR SENSOR STATUS PUBLISH =====
+  // Publish IR sensor status every ACTUATOR_PUBLISH_INTERVAL to ensure web server stays updated
+  if (now - lastActuatorPublishTime >= ACTUATOR_PUBLISH_INTERVAL) {
+    lastActuatorPublishTime = now;
+    publishActuatorStatus();
   }
 
   if (!mqttClient.connected()) {
