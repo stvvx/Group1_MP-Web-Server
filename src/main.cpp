@@ -59,7 +59,7 @@ float calibration_value = 21.35;  // Adjust based on your sensor
 #define STEP_DELAY_US       1000    // Microseconds between steps
 #define STEPS_PER_REV       4096    // 28BYJ-48 half-step = full revolution
 #define HALF_TURN           2048    // 180° = hole up <-> hole down
-#define DUMP_PAUSE_MS       2500    // How long it waits at hole-down (food drops)
+#define DUMP_PAUSE_MS       800    // How long it waits at hole-down (food drops)
 #define LDR_INTERVAL_MS     200     // How often to check the LDR
 #define FEED_COOLDOWN_MS    5000    // Min gap between feeds (anti-spam)
 
@@ -195,6 +195,7 @@ void runActuatorCycle();
 void extendActuator();
 void retractActuator();
 void stopActuator();
+void publishActuatorStatus();
 
 // ============================================================
 //  SETUP
@@ -650,6 +651,29 @@ void publishTelemetry() {
   mqttClient.publish(mqttTopic("telemetry").c_str(), payload.c_str(), false);
 }
 
+// Publish actuator status to MQTT
+void publishActuatorStatus() {
+  if (!mqttClient.connected()) return;
+
+  String stateStr = "IDLE";
+  if (currentState == FULLY_EXTRACTED) stateStr = "EXTENDING";
+  else if (currentState == FULLY_RETRACTED) stateStr = "RETRACTING";
+
+  // include raw IR sensor readings
+  String sensorState = (stableSensorState == LOW) ? "LOW" : "HIGH";
+
+  String payload = "{";
+  payload += "\"timestamp\":\"" + String(millis()) + "\",";
+  payload += "\"hitCount\":" + String(hitCount) + ",";
+  payload += "\"state\":\"" + stateStr + "\",";
+  payload += "\"running\":" + String(currentState != IDLE ? "true" : "false") + ",";
+  payload += "\"ir_sensor\":\"" + sensorState + "\",";
+  payload += "\"stable\":" + String(stableSensorState == LOW ? "true" : "false");
+  payload += "}";
+
+  mqttClient.publish(mqttTopic("actuator").c_str(), payload.c_str(), true);
+}
+
 String mqttTopic(const char* suffix) {
   return String(MQTT_BASE_TOPIC) + "/" + suffix;
 }
@@ -897,6 +921,9 @@ void readSensorAndCountHits() {
         hitCount++;
         Serial.print("![🔴](https://static.xx.fbcdn.net/images/emoji.php/v9/t6e/1/16/1f534.png) HIT #");
         Serial.println(hitCount);
+        
+          // Publish hit update
+          publishActuatorStatus();
 
         if (hitCount >= hitsRequired) {
           startActuatorCycle();
@@ -914,6 +941,9 @@ void startActuatorCycle() {
   motionTimer = millis();
   extendActuator();
   Serial.println("![▶](https://static.xx.fbcdn.net/images/emoji.php/v9/t40/1/16/25b6.png) FULLY EXTRACTED (EXTENDING)");
+  
+    // Publish actuator start
+    publishActuatorStatus();
 }
 
 void runActuatorCycle() {
@@ -927,6 +957,9 @@ void runActuatorCycle() {
       motionTimer = millis();
       retractActuator();
       Serial.println("![◀](https://static.xx.fbcdn.net/images/emoji.php/v9/td9/1/16/25c0.png) FULLY RETRACTED (RETRACTING)");
+      
+        // Publish actuator state change
+        publishActuatorStatus();
     }
   } else if (currentState == FULLY_RETRACTED) {
     if (elapsed >= retractTime) {
@@ -934,6 +967,9 @@ void runActuatorCycle() {
       currentState = IDLE;
       Serial.println("![✅](https://static.xx.fbcdn.net/images/emoji.php/v9/t33/1/16/2705.png) CYCLE COMPLETE (FULLY HOME)");
       Serial.println();
+      
+        // Publish actuator cycle complete
+        publishActuatorStatus();
     }
   }
 }
