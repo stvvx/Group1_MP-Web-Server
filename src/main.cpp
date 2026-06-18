@@ -9,8 +9,8 @@
 #include <PubSubClient.h>
 
 // ===== WiFi CONFIGURATION =====
-const char* WIFI_SSID = "Redmi Note 14 Pro 5G";
-const char* WIFI_PASSWORD = "jerome12345";
+const char* WIFI_SSID = "iPhone";
+const char* WIFI_PASSWORD = "bastaa1234";
 
 // ===== PIN DEFINITIONS =====
 // TDS Sensor & Pump
@@ -56,9 +56,12 @@ float calibration_value = 21.35;  // Adjust based on your sensor
 
 // ===== LDR & STEPPER CONFIGURATION =====
 #define LDR_THRESHOLD       2500    // ADC ≥ this = DARK → motor runs
-#define STEP_DELAY_US       1200    // Microseconds between steps
-#define STEPS_PER_CYCLE     512     // Full rotation = 512 steps
-#define FEEDER_INTERVAL_MS  200     // How often to check LDR (ms)
+#define STEP_DELAY_US       1000    // Microseconds between steps
+#define STEPS_PER_REV       4096    // 28BYJ-48 half-step = full revolution
+#define HALF_TURN           2048    // 180° = hole up <-> hole down
+#define DUMP_PAUSE_MS       2500    // How long it waits at hole-down (food drops)
+#define LDR_INTERVAL_MS     200     // How often to check the LDR
+#define FEED_COOLDOWN_MS    5000    // Min gap between feeds (anti-spam)
 
 // ===== TURBIDITY CONFIGURATION =====
 #define TURBIDITY_THRESHOLD_NTU 70   // NTU threshold for turbid water
@@ -75,7 +78,7 @@ float ammoniaThreshold = 4.0;        // ppm threshold for ammonia
 #define RELAY_ON   LOW      // Most ESP32 relay modules use LOW to turn ON
 #define RELAY_OFF  HIGH     // HIGH to turn OFF
 
-const char* MQTT_BROKER_HOST = "10.170.1.135";
+const char* MQTT_BROKER_HOST = "172.20.10.2";
 const uint16_t MQTT_BROKER_PORT = 1883;
 const char* MQTT_CLIENT_ID = "group1-mp-esp32";
 const char* MQTT_BASE_TOPIC = "group1/mp";
@@ -119,6 +122,10 @@ bool lastAmmoniaState = false;
 unsigned long lastAmmoniaReadTime = 0;
 const unsigned long AMMONIA_INTERVAL = 1000; // Read every 1 second
 
+// ===== FEEDER RUNTIME STATE =====
+bool wasDark = false;
+unsigned long lastFeedTime = 0;
+
 // ===== STEPPER HALF-STEP SEQUENCE =====
 const int stepSequence[8][4] = {
   {1, 0, 0, 0},
@@ -145,7 +152,8 @@ void readTurbidityAndControl();
 float getDistanceMM();
 void readWaterLevelAndControl();
 void readAmmoniaAndControl();
-void runFeederCycle(const String& reason);
+void feedOnce();
+void rotateSteps(long n);
 void setupMqtt();
 void connectMqtt();
 void mqttCallback(char* topic, byte* payload, unsigned int length);
@@ -272,7 +280,10 @@ void setup() {
   Serial.println("  - LDR Sensor on GPIO 36");
   Serial.println("  - LDR Threshold: ≥ " + String(LDR_THRESHOLD) + " = DARK → FEED");
   Serial.println("  - Stepper on GPIO 15, 2, 4, 16");
-  Serial.println("  - Steps per cycle: " + String(STEPS_PER_CYCLE));
+  Serial.println("  - Steps per revolution: " + String(STEPS_PER_REV));
+  Serial.println("  - 180° dump: " + String(HALF_TURN) + " steps");
+  Serial.println("  - Pause at dump: " + String(DUMP_PAUSE_MS) + "ms");
+  Serial.println("  - Cooldown between feeds: " + String(FEED_COOLDOWN_MS) + "ms");
   
   Serial.println("\n💧 TURBIDITY CONTROL:");
   Serial.println("  - Turbidity Sensor on GPIO 33");
@@ -328,9 +339,17 @@ void loop() {
   // ===== SECTION 2: pH MONITORING & CONTROL =====
   lastPHValue = readPH();
   
-  // ===== SECTION 3: LDR & STEPPER FEEDER =====
+  // ===== SECTION 3: LDR & STEPPER FEEDER (with transition detection) =====
   lastLDRValue = readLDR();
-  lastIsDark = (lastLDRValue >= LDR_THRESHOLD);
+  bool isDark = (lastLDRValue >= LDR_THRESHOLD);
+  
+  // Trigger once on LIGHT -> DARK transition, after cooldown
+  if (isDark && !wasDark && (millis() - lastFeedTime >= FEED_COOLDOWN_MS)) {
+    feedOnce();
+    lastFeedTime = millis();
+  }
+  
+  wasDark = isDark;
   
   // ===== SECTION 4: TURBIDITY & SUBMERSIBLE PUMP =====
   readTurbidityAndControl();
@@ -390,7 +409,12 @@ void loop() {
     Serial.print("│ Feeder: LDR=");
     Serial.print(lastLDRValue);
     Serial.print(" | ");
-    Serial.print(lastIsDark ? "🌑 DARK → FEEDING" : "☀️ LIGHT → IDLE");
+    Serial.print(isDark ? "🌑 DARK" : "☀️ LIGHT");
+    if (isDark && !wasDark) {
+      Serial.print(" → TRIGGERING FEED");
+    } else {
+      Serial.print(" → IDLE");
+    }
     Serial.println("                                                            │");
     
     // Turbidity Line
@@ -451,14 +475,14 @@ void loop() {
     digitalWrite(PH_RELAY_PUMP, RELAY_OFF);
   }
   
-  // Control Feeder (blocking operation)
-  if (manualFeedRequested || lastIsDark) {
-    String feedReason = manualFeedRequested ? "Manual feed requested" : "Dark detected";
+  // Control manual feed request (MQTT)
+  if (manualFeedRequested) {
     manualFeedRequested = false;
-    runFeederCycle(feedReason);
+    feedOnce();
+    lastFeedTime = millis();
   }
   
-  delay(FEEDER_INTERVAL_MS);
+  delay(LDR_INTERVAL_MS);
 }
 
 // ============================================================
@@ -652,7 +676,7 @@ float readPH() {
 }
 
 // ============================================================
-//  LDR SENSOR FUNCTION
+//  LDR SENSOR FUNCTION (with averaging)
 // ============================================================
 int readLDR() {
   long sum = 0;
@@ -745,21 +769,36 @@ void readWaterLevelAndControl() {
   }
 }
 
-void runFeederCycle(const String& reason) {
-  lastFeederMessage = reason;
-  Serial.println("\n🌑🌑🌑 FEEDING CYCLE STARTED: " + reason + " 🌑🌑🌑");
-  Serial.print("Running ");
-  Serial.print(STEPS_PER_CYCLE);
-  Serial.println(" steps...\n");
+// ============================================================
+//  FEEDER FUNCTIONS (with 180° dump, pause, 180° back to home)
+// ============================================================
+void feedOnce() {
+  lastFeederMessage = "Feeding cycle started";
+  Serial.println("\n🌑🌑🌑 FEEDING CYCLE STARTED: 180° dump, pause, 180° return 🌑🌑🌑");
+  
+  Serial.println("  🔄 Rotating 180° -> hole DOWN");
+  rotateSteps(HALF_TURN);          // hole now faces down (180°)
+  releaseMotor();                  // gear friction holds it in place
 
-  for (int i = 0; i < STEPS_PER_CYCLE; i++) {
+  Serial.print("  ⏸️ Pausing ");
+  Serial.print(DUMP_PAUSE_MS / 1000.0, 1);
+  Serial.println("s -> food dropping");
+  delay(DUMP_PAUSE_MS);            // wait while pellets fall
+
+  Serial.println("  🔄 Rotating 180° -> back HOME (hole up)");
+  rotateSteps(HALF_TURN);          // completes full 360°, hole up again
+  releaseMotor();
+
+  Serial.println("✅✅✅ FEEDING CYCLE COMPLETE - Ready for next feed ✅✅✅\n");
+  publishStatus();
+}
+
+// Rotate n half-steps forward
+void rotateSteps(long n) {
+  for (long i = 0; i < n; i++) {
     stepMotor();
     delayMicroseconds(STEP_DELAY_US);
   }
-  releaseMotor();
-
-  Serial.println("✅✅✅ FEEDING CYCLE COMPLETE ✅✅✅\n");
-  publishStatus();
 }
 
 // ============================================================
