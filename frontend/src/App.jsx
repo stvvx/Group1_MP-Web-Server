@@ -32,6 +32,8 @@ function App() {
   const [backendLastSync, setBackendLastSync] = useState(null)
   const [backendSyncCount, setBackendSyncCount] = useState(0)
   const [feedState, setFeedState] = useState('idle')
+  const [actuatorState, setActuatorState] = useState('idle')
+  const [actuatorStatus, setActuatorStatus] = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
   const [activePage, setActivePage] = useState('dashboard') // 'dashboard' | 'rosario' | 'tolin'
 
@@ -45,7 +47,7 @@ function App() {
 
     clientRef.current = client
 
-    const subscriptions = [topic('status'), topic('telemetry'), topic('status/availability')]
+    const subscriptions = [topic('status'), topic('telemetry'), topic('status/availability'), topic('actuator')]
 
     const handleConnect = () => {
       setBrokerStatus('connected')
@@ -108,6 +110,19 @@ function App() {
       if (incomingTopic === topic('status/availability')) {
         setEsp32Status(message === 'online' ? 'online' : 'offline')
         setLastUpdated(new Date())
+        return
+      }
+
+      if (incomingTopic === topic('actuator')) {
+        try {
+          const data = JSON.parse(message)
+          setActuatorStatus(data)
+          setActuatorState(data.running ? 'running' : 'idle')
+          setLastUpdated(new Date())
+        } catch {
+          setActuatorStatus({ raw: message })
+        }
+        return
       }
     }
 
@@ -187,6 +202,29 @@ function App() {
     })
   }
 
+  const handleActuatorNow = async () => {
+    const client = clientRef.current
+
+    if (!client || brokerStatus !== 'connected') {
+      setError('MQTT broker is not connected yet.')
+      return
+    }
+
+    setActuatorState('sending')
+
+    client.publish(topic('actuator'), '1', { qos: 1, retain: false }, (publishError) => {
+      if (publishError) {
+        setActuatorState('error')
+        setError(publishError.message || 'Failed to publish actuator command.')
+      } else {
+        setActuatorState('queued')
+        setError('')
+      }
+
+      window.setTimeout(() => setActuatorState('idle'), 1500)
+    })
+  }
+
   const reconnectBroker = () => {
     clientRef.current?.reconnect()
   }
@@ -234,6 +272,14 @@ function App() {
       unit: 'ADC',
       detail: sourceStatus?.feeder?.isDark ? 'Dark detected' : 'Light detected',
       state: sourceStatus?.feeder?.lastMessage || 'Idle',
+    },
+    {
+      key: 'actuator',
+      title: 'Actuator',
+      value: actuatorStatus?.hitCount ?? actuatorStatus?.hits ?? '-',
+      unit: '',
+      detail: actuatorStatus?.state ? `State: ${actuatorStatus.state}` : 'Awaiting actuator telemetry',
+      state: actuatorStatus?.running ? 'Running' : 'Idle',
     },
     {
       key: 'turbidity',

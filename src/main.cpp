@@ -78,6 +78,33 @@ float ammoniaThreshold = 4.0;        // ppm threshold for ammonia
 #define RELAY_ON   LOW      // Most ESP32 relay modules use LOW to turn ON
 #define RELAY_OFF  HIGH     // HIGH to turn OFF
 
+// ===== IR SENSOR + ACTUATOR CONFIGURATION =====
+const int IR_SENSOR_PIN = 39;      // IR sensor input
+const int RELAY1_PIN = 12;        // Actuator relay IN8
+const int RELAY2_PIN = 5;         // Actuator relay IN4
+
+int hitCount = 0;
+const int hitsRequired = 1;
+
+const unsigned long debounceDelay = 50;
+const unsigned long extendTime = 2000;
+const unsigned long retractTime = 6000;
+const unsigned long switchDelay = 100;
+
+bool lastSensorState = HIGH;
+bool stableSensorState = HIGH;
+
+unsigned long lastDebounceTime = 0;
+unsigned long motionTimer = 0;
+
+enum ActuatorState {
+  IDLE,
+  FULLY_EXTRACTED,
+  FULLY_RETRACTED
+};
+
+ActuatorState currentState = IDLE;
+
 const char* MQTT_BROKER_HOST = "172.20.10.2";
 const uint16_t MQTT_BROKER_PORT = 1883;
 const char* MQTT_CLIENT_ID = "group1-mp-esp32";
@@ -244,6 +271,14 @@ void setup() {
   pinMode(AMMONIA_RELAY_PIN, OUTPUT);
   digitalWrite(AMMONIA_RELAY_PIN, RELAY_OFF);  // Air pump OFF initially
   
+  // ----- IR SENSOR + ACTUATOR SETUP -----
+  pinMode(IR_SENSOR_PIN, INPUT);
+  pinMode(RELAY1_PIN, OUTPUT);
+  pinMode(RELAY2_PIN, OUTPUT);
+  digitalWrite(RELAY1_PIN, HIGH);
+  digitalWrite(RELAY2_PIN, HIGH);
+  stopActuator();
+
   // ----- ULTRASONIC SENSOR SETUP -----
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
@@ -364,6 +399,13 @@ void loop() {
   if (now - lastAmmoniaReadTime >= AMMONIA_INTERVAL) {
     lastAmmoniaReadTime = now;
     readAmmoniaAndControl();
+  }
+
+  // ===== SECTION 7: IR HIT COUNTER + ACTUATOR =====
+  if (currentState == IDLE) {
+    readSensorAndCountHits();
+  } else {
+    runActuatorCycle();
   }
 
   if (!mqttClient.connected()) {
@@ -828,6 +870,80 @@ void readAmmoniaAndControl() {
     }
     digitalWrite(AMMONIA_RELAY_PIN, RELAY_OFF);
   }
+}
+
+// ============================================================
+//  IR SENSOR + ACTUATOR FUNCTIONS
+// ============================================================
+void readSensorAndCountHits() {
+  bool currentSensorState = digitalRead(IR_SENSOR_PIN);
+
+  if (currentSensorState != lastSensorState) {
+    lastDebounceTime = millis();
+  }
+
+  if ((millis() - lastDebounceTime) > debounceDelay) {
+    if (currentSensorState != stableSensorState) {
+      stableSensorState = currentSensorState;
+
+      if (stableSensorState == LOW) {
+        hitCount++;
+        Serial.print("![🔴](https://static.xx.fbcdn.net/images/emoji.php/v9/t6e/1/16/1f534.png) HIT #");
+        Serial.println(hitCount);
+
+        if (hitCount >= hitsRequired) {
+          startActuatorCycle();
+        }
+      }
+    }
+  }
+
+  lastSensorState = currentSensorState;
+}
+
+void startActuatorCycle() {
+  hitCount = 0;
+  currentState = FULLY_EXTRACTED;
+  motionTimer = millis();
+  extendActuator();
+  Serial.println("![▶](https://static.xx.fbcdn.net/images/emoji.php/v9/t40/1/16/25b6.png) FULLY EXTRACTED (EXTENDING)");
+}
+
+void runActuatorCycle() {
+  unsigned long elapsed = millis() - motionTimer;
+
+  if (currentState == FULLY_EXTRACTED) {
+    if (elapsed >= extendTime) {
+      stopActuator();
+      delay(switchDelay);
+      currentState = FULLY_RETRACTED;
+      motionTimer = millis();
+      retractActuator();
+      Serial.println("![◀](https://static.xx.fbcdn.net/images/emoji.php/v9/td9/1/16/25c0.png) FULLY RETRACTED (RETRACTING)");
+    }
+  } else if (currentState == FULLY_RETRACTED) {
+    if (elapsed >= retractTime) {
+      stopActuator();
+      currentState = IDLE;
+      Serial.println("![✅](https://static.xx.fbcdn.net/images/emoji.php/v9/t33/1/16/2705.png) CYCLE COMPLETE (FULLY HOME)");
+      Serial.println();
+    }
+  }
+}
+
+void extendActuator() {
+  digitalWrite(RELAY1_PIN, LOW);
+  digitalWrite(RELAY2_PIN, LOW);
+}
+
+void retractActuator() {
+  digitalWrite(RELAY1_PIN, HIGH);
+  digitalWrite(RELAY2_PIN, HIGH);
+}
+
+void stopActuator() {
+  digitalWrite(RELAY1_PIN, LOW);
+  digitalWrite(RELAY2_PIN, HIGH);
 }
 
 // ============================================================
