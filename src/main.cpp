@@ -189,6 +189,13 @@ void publishTelemetry();
 String mqttTopic(const char* suffix);
 String buildStatusJson();
 
+void readSensorAndCountHits();
+void startActuatorCycle();
+void runActuatorCycle();
+void extendActuator();
+void retractActuator();
+void stopActuator();
+
 // ============================================================
 //  SETUP
 // ============================================================
