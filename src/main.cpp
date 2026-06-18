@@ -42,7 +42,7 @@ const char* WIFI_PASSWORD = "bastaa1234";
 #define AMMONIA_RELAY_PIN 23   // Air pump relay
 
 // ===== TDS CONFIGURATION =====
-const int   TDS_THRESHOLD           = 1500;   // ppm - Below = pump ON
+const int   TDS_THRESHOLD           = 200;   // ppm - Below = pump ON
 const int   SERIAL_UPDATE_INTERVAL_MS = 1000;
 const int   SAMPLE_INTERVAL_MS        = 50;
 const int   TDS_READ_INTERVAL_MS      = 500;
