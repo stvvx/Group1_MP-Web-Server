@@ -30,18 +30,42 @@ const db = fs.existsSync(dbPath)
   : new SQL.Database();
 
 let isSaving = false;
+let isDirty = false;
+
 const saveDb = () => {
-  if (isSaving) return; // Prevent concurrent saves
+  if (isSaving) return;
   isSaving = true;
   try {
     const data = db.export();
     fs.writeFileSync(dbPath, Buffer.from(data));
+    isDirty = false;
   } catch (err) {
     console.error('❌ Error saving database:', err.message);
   } finally {
     isSaving = false;
   }
 };
+
+const markDirty = () => { isDirty = true; };
+
+// Flush to disk every 1 second if there are unsaved changes
+setInterval(() => {
+  if (isDirty) {
+    saveDb();
+    console.log(`💾 [${new Date().toISOString()}] Auto-synced database to disk`);
+  }
+}, 1000);
+
+// Flush on graceful shutdown
+const shutdown = () => {
+  if (isDirty) {
+    console.log('💾 Flushing database before shutdown...');
+    saveDb();
+  }
+  process.exit(0);
+};
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 db.run(`
   CREATE TABLE IF NOT EXISTS sensor_data (
@@ -52,6 +76,7 @@ db.run(`
     raw_data TEXT
   )
 `);
+
 
 const getLastInsertId = () => {
   const result = db.exec('SELECT last_insert_rowid() AS id');
@@ -99,7 +124,7 @@ mqttClient.on('message', (topic, message) => {
     const stmt = db.prepare('INSERT INTO sensor_data (timestamp, sensor, value, raw_data) VALUES (?, ?, ?, ?)');
     stmt.run([timestamp, sensorType, null, msg]);
     stmt.free();
-    saveDb();
+    markDirty();
     console.log(`✅ [${timestamp}] Saved ${sensorType} from ${topic}`);
   } catch (e) {
     console.error('❌ Error handling MQTT message:', e.message);
@@ -119,7 +144,7 @@ app.post('/api/data', (req, res) => {
     );
     stmt.run([timestamp, sensor, value ?? null, raw_data ?? null]);
     stmt.free();
-    saveDb();
+    markDirty();
 
     console.log(`✅ Saved ${sensor} data to database`);
     res.status(201).json({ id: getLastInsertId(), success: true });

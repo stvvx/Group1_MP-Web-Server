@@ -137,7 +137,7 @@ export default function App() {
   const [telemetry, setTelemetry] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [backendStatus, setBackendStatus] = useState('idle')
+  const [backendStatus, setBackendStatus] = useState('checking')
   const [backendError, setBackendError] = useState('')
   const [backendLastSync, setBackendLastSync] = useState(null)
   const [backendSyncCount, setBackendSyncCount] = useState(0)
@@ -154,6 +154,22 @@ export default function App() {
   const [actuatorRunning, setActuatorRunning] = useState(false)
   const [actuatorCycleState, setActuatorCycleState] = useState('IDLE')
   const [actuatorHistory, setActuatorHistory] = useState([])
+
+  // ── Backend health check ──
+  const checkBackendHealth = useCallback(async () => {
+    try {
+      const res = await fetch('/api/health')
+      if (!res.ok) throw new Error(`Health check failed (${res.status})`)
+      const data = await res.json()
+      setBackendStatus('synced')
+      setBackendLastSync(new Date())
+      setBackendSyncCount(data.records ?? 0)
+      setBackendError('')
+    } catch (e) {
+      setBackendStatus('error')
+      setBackendError(e.message)
+    }
+  }, [])
 
   // ── Fetch history from SQLite backend ──
   const fetchHistory = useCallback(async () => {
@@ -223,10 +239,14 @@ export default function App() {
   useEffect(() => {
     fetchHistory()
     fetchActuatorHistory()
+    checkBackendHealth()
+
     const historyInterval = setInterval(() => {
       fetchHistory()
       fetchActuatorHistory()
     }, 30_000)
+
+    const healthInterval = setInterval(checkBackendHealth, 5000)
 
     ;(async () => {
       try {
@@ -341,6 +361,7 @@ export default function App() {
 
     return () => {
       clearInterval(historyInterval)
+      clearInterval(healthInterval)
       client.removeListener('connect', handleConnect)
       client.removeListener('reconnect', handleReconnect)
       client.removeListener('close', handleClose)
@@ -349,7 +370,7 @@ export default function App() {
       client.end(true)
       clientRef.current = null
     }
-  }, [fetchHistory, fetchActuatorHistory])
+  }, [fetchHistory, fetchActuatorHistory, checkBackendHealth])
 
   useEffect(() => {
     if (status || telemetry) { 
@@ -614,7 +635,7 @@ export default function App() {
                   : 'Waiting for first reading…'}
               </div>
               <div className="aq-status-card__sync">
-                <span>{backendError ? '⚠ Sync failed' : backendSyncCount > 0 ? `✓ ${backendSyncCount} synced` : 'Idle'}</span>
+                <span>{backendError ? '⚠ Sync failed' : backendStatus === 'synced' ? `✓ ${backendSyncCount} records in DB` : 'Checking…'}</span>
                 {backendLastSync && <span>{backendLastSync.toLocaleTimeString()}</span>}
               </div>
             </div>
@@ -886,8 +907,8 @@ export default function App() {
           </div>
           <div>
             <span className="aq-footer__label">Sync</span>
-            <strong className={`aq-footer__val ${backendError ? 'aq-footer__val--error' : backendSyncCount > 0 ? 'aq-footer__val--synced' : ''}`}>
-              {backendError ? 'Failed' : backendStatus === 'saving' ? 'Saving…' : backendSyncCount > 0 ? `Synced (${backendSyncCount})` : 'Idle'}
+            <strong className={`aq-footer__val ${backendError ? 'aq-footer__val--error' : backendStatus === 'synced' ? 'aq-footer__val--synced' : ''}`}>
+              {backendError ? 'Failed' : backendStatus === 'saving' ? 'Saving…' : backendStatus === 'checking' ? 'Checking…' : backendStatus === 'synced' ? `✓ ${backendSyncCount} records` : 'Idle'}
             </strong>
           </div>
           <div>
